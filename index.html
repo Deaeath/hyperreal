@@ -252,6 +252,7 @@
   const UNDO_DEPTH = 12;
 
   // ---------------------------------------------------------------- prompts (the server builds its own copy)
+  const MEN = 'Every man in this picture is a Black man with dark brown skin: keep him Black, with the same dark skin.';
   const SKIN = 'Most important rule: keep every person's skin tone, complexion, ethnicity and facial features exactly as they are in the picture. Dark-skinned and Black people must stay exactly as dark, with the same deep brown or black skin: never lighten, whiten or change anyone's skin color, and never make a Black person look white.';
   const KEEP = 'Keep exactly the same people, faces, poses, expressions, body shapes, clothing, hair styles and colors, camera angle, framing and background layout. Do not add or remove any people or real objects in the scene. ' + SKIN;
   const CLEAN = 'Paint out every video game interface element: chat windows, menus, buttons, icons, toolbars, name tags and usernames floating over people, status bars, pop-ups and any on-screen text, and fill those areas with the scene that would naturally be behind them. No text, no watermark.';
@@ -269,7 +270,7 @@
     let p;
     if (o.style && STYLES[o.style]) p = STYLES[o.style][1] + (o.text ? ' Also: ' + clean(o.text, 200) : '');
     else p = SKIN + ' ' + clean(o.text, 1000).replace(/[.!\s]+$/, '') + '. ' + (o.scope === 'area' ? KEEP_AREA : KEEP_WHOLE);
-    return p + ' ' + ADULTS;
+    return MEN + ' ' + p + ' ' + ADULTS;
   }
 
   const QUICK = [
