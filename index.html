@@ -473,6 +473,7 @@
       if (o.style) fd.append('style', o.style);
       if (o.text) fd.append(o.style ? 'extra' : 'prompt', o.text);
       fd.append('scope', o.scope);
+      if (o.fresh) fd.append('fresh', '1');   // the original screenshot: clean the game UI out first
       let r;
       try {
         r = S.mode === 'public'
@@ -894,7 +895,7 @@
       let crop = canvasOf(reg.w, reg.h);
       crop.getContext('2d').drawImage(base.canvas, reg.x, reg.y, reg.w, reg.h, 0, 0, reg.w, reg.h);
       if (Math.max(reg.w, reg.h) > MAX_SIDE) crop = fit(crop, MAX_SIDE);
-      const res = await runEdit(await toJpeg(crop), { style: o.style, text: o.text, scope: area ? 'area' : 'whole' });
+      const res = await runEdit(await toJpeg(crop), { style: o.style, text: o.text, scope: area ? 'area' : 'whole', fresh: baseIndex === 0 });
       const img = await loadImage(res.blob);
       let out;
       if (area) out = composite(base.canvas, img, reg);
