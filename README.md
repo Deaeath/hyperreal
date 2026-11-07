@@ -9,6 +9,6 @@ Turn a 3DXChat screenshot into a real-looking photo, or paint over anything and 
 - Every edit is a version you can go back to, compare or download.
 - Realism edits paint out the game's chat windows, menus and name tags.
 
-It runs entirely in your browser on your own [Venice AI](https://venice.ai/settings/api) key, which goes only to api.venice.ai. Nothing is uploaded anywhere else. SBS members can use it with no key on the SBS desktop.
+It's free and needs no key or account: edits run through the SBS server, and nothing is kept. If the server can't be reached, you can use your own [Venice AI](https://venice.ai/settings/api) key instead, which goes only to api.venice.ai. In Discord, use `/hyperreal`, or reply to a result to keep changing it.
 
-Everyone in your pictures must be an adult. Venice's own rules apply.
+For adults only. Everyone in your pictures must be an adult. Venice's own rules apply.

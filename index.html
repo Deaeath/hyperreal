@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob: data:; connect-src 'self' https://api.venice.ai; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob: data:; connect-src 'self' https://sbsbot.my.pebble.host https://api.venice.ai; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <title>Hyperreal Studio</title>
 <meta name="description" content="Turn a 3DXChat screenshot into a real-looking photo, or select anything and tell it what to change. Venice AI.">
@@ -11,7 +11,8 @@
 <!--
   Hyperreal Studio. One page, two homes:
     * on the SBS site (/hyperreal) it edits through /api/sbs/enhance with the member's login and the server's key
-    * anywhere else (GitHub Pages) it asks for the visitor's own Venice key and calls Venice directly
+    * on GitHub Pages it edits free through the SBS server's public route (the key never leaves the server)
+    * if that can't be reached, it asks for the visitor's own Venice key and calls Venice directly
   Selections never go to Venice as a mask (its edit API has none): the area around the selection is
   cropped out, edited, and blended back through a feathered mask, so nothing outside it changes.
 -->
@@ -216,6 +217,14 @@
   </div>
 </div>
 
+<div class="sheet" id="ageGate" hidden>
+  <div class="card">
+    <h2>Adults only</h2>
+    <p>Hyperreal can make realistic adult pictures. Confirm you are 18 or older to use it. Everyone in your pictures must be an adult too.</p>
+    <div class="row"><button class="btn main" id="ageYes" type="button">I am 18 or older</button></div>
+  </div>
+</div>
+
 <div class="sheet" id="settings" hidden>
   <form class="card" id="settingsForm">
     <h2>Your Venice key</h2>
@@ -239,6 +248,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const MAX_SIDE = 2048;
+  const PUBLIC_API = 'https://sbsbot.my.pebble.host';
   const UNDO_DEPTH = 12;
 
   // ---------------------------------------------------------------- prompts (the server builds its own copy)
@@ -274,7 +284,7 @@
 
   // ---------------------------------------------------------------- state
   const S = {
-    mode: null,             // 'server' | 'byok'
+    mode: null,             // 'server' (SBS site, member login) | 'public' (free, via the SBS server) | 'byok'
     status: null,
     versions: [],           // {canvas, thumb, label, from}
     cur: -1,
@@ -365,7 +375,7 @@
     if (send({ text })) { $('input').value = ''; autosize(); refresh(); }
   });
 
-  function ready() { return S.mode === 'server' ? !!(S.status && S.status.signed_in && S.status.configured && S.status.left !== 0) : !!key(); }
+  function viaServer() { return S.mode === 'server' || S.mode === 'public'; }
   function refresh() {
     $('sendBtn').disabled = S.busy || S.cur < 0 || !$('input').value.trim();
     renderChips();
@@ -387,13 +397,30 @@
     }
     const left = $('left');
     if (S.mode === 'server' && S.status && S.status.signed_in) left.textContent = S.status.owner ? 'No daily limit' : (typeof S.status.left === 'number' ? S.status.left + ' edits left today' : '');
+    else if (S.mode === 'public' && S.status) left.textContent = typeof S.status.left === 'number' ? S.status.left + ' free edits left today' : 'Free';
     else left.textContent = '';
   }
 
   // ---------------------------------------------------------------- backends
   function key() { return ($('key').value || '').trim(); }
+  function ageCheck() { if (S.mode !== 'server' && store.get('hr_adult') !== 'yes') $('ageGate').hidden = false; }
+  $('ageYes').onclick = () => { store.set('hr_adult', 'yes'); $('ageGate').hidden = true; };
+  async function tryPublic() {
+    try {
+      const r = await fetch(PUBLIC_API + '/api/sbs/enhance/public/status', { credentials: 'omit' });
+      if (!r.ok) throw new Error(r.status);
+      const st = await r.json();
+      if (!st.public || !st.configured) throw new Error('off');
+      S.status = st; S.mode = 'public';
+      refresh(); ageCheck();
+      return true;
+    } catch (e) { return false; }
+  }
   async function detectMode() {
-    if (/\.github\.io$/i.test(location.hostname) || location.protocol === 'file:') return byok();
+    if (/\.github\.io$/i.test(location.hostname) || location.protocol === 'file:' || new URLSearchParams(location.search).has('public')) {
+      if (await tryPublic()) return;
+      return byok();
+    }
     try {
       const r = await fetch('/api/sbs/enhance/status', { credentials: 'same-origin' });
       if (!r.ok) throw new Error(r.status);
@@ -408,6 +435,7 @@
     S.mode = 'byok';
     $('settingsBtn').hidden = false;
     $('memberLink').hidden = false;
+    ageCheck();
     const saved = store.get('hr_venice_key');
     if (saved) { $('key').value = saved; $('remember').checked = true; }
     const m = store.get('hr_model');
@@ -439,18 +467,23 @@
     503: 'Venice is busy right now. Try again in a minute.',
   };
   async function runEdit(blob, o) {
-    if (S.mode === 'server') {
+    if (viaServer()) {
       const fd = new FormData();
       fd.append('image', blob, 'picture.jpg');
       if (o.style) fd.append('style', o.style);
       if (o.text) fd.append(o.style ? 'extra' : 'prompt', o.text);
       fd.append('scope', o.scope);
-      const r = await fetch('/api/sbs/enhance', { method: 'POST', body: fd, credentials: 'same-origin' });
+      let r;
+      try {
+        r = S.mode === 'public'
+          ? await fetch(PUBLIC_API + '/api/sbs/enhance/public', { method: 'POST', body: fd, credentials: 'omit' })
+          : await fetch('/api/sbs/enhance', { method: 'POST', body: fd, credentials: 'same-origin' });
+      } catch (e) { throw new Error("Couldn't reach the server. Check your connection and try again."); }
       const type = r.headers.get('Content-Type') || '';
       if (!r.ok || !type.startsWith('image/')) {
         let err = 'Something went wrong. Try again.';
         try { const d = await r.json(); err = d.error || err; if (typeof d.left === 'number' && S.status) S.status.left = d.left; } catch (e) {}
-        if (r.status === 401) $('gate').hidden = false;
+        if (r.status === 401 && S.mode === 'server') $('gate').hidden = false;
         throw new Error(err);
       }
       const left = r.headers.get('X-Enhance-Left');
@@ -845,7 +878,8 @@
     if (S.cur < 0) { say('bot', 'Drop in a screenshot first.', { err: true }); return false; }
     if (S.mode === 'byok' && !key()) { pendingSend = o; $('settings').hidden = false; $('key').focus(); return false; }
     if (S.mode === 'server' && S.status && !S.status.signed_in) { $('gate').hidden = false; return false; }
-    if (S.mode === 'server' && S.status && S.status.left === 0) { say('bot', "That's all for today. Your edits reset at midnight UTC.", { err: true }); return false; }
+    if (viaServer() && S.status && S.status.left === 0) { say('bot', "That's all for today. Your edits reset at midnight UTC.", { err: true }); return false; }
+    if (S.mode !== 'server' && store.get('hr_adult') !== 'yes') { $('ageGate').hidden = false; return false; }
     go(o);
     return true;
   }
