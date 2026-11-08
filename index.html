@@ -255,7 +255,7 @@
   const MEN = "Every man in this picture is a Black man with dark brown skin: keep him Black, with the same dark skin. Everyone else keeps their own skin tone exactly as it is. Do not add any people.";
   const SKIN = "Most important rule: keep every person's skin tone, complexion, ethnicity and facial features exactly as they are in the picture. Dark-skinned and Black people must stay exactly as dark, with the same deep brown or black skin: never lighten, whiten or change anyone's skin color, and never make a Black person look white.";
   const KEEP = 'Keep exactly the same people, faces, poses, expressions, body shapes, clothing, hair styles and colors, camera angle, framing and background layout. Do not add or remove any people or real objects in the scene. ' + SKIN;
-  const CLEAN = 'Paint out every video game interface element: chat windows, menus, buttons, icons, toolbars, name tags and usernames floating over people, status bars, pop-ups and any on-screen text, and fill those areas with the scene that would naturally be behind them. No text, no watermark.';
+  const CLEAN = "The finished photo has no on-screen overlays of any kind: no text, windows, panels, buttons, icons or labels. If the screenshot has any, paint the scene back in where they were; if it has none, add none.";
   const STYLES = {
     photo: ['Make it real', 'Turn this 3D video game screenshot into a real photograph. ' + SKIN + ' ' + KEEP + ' ' + CLEAN + ' Replace the game rendering with real-world detail: natural skin with pores and fine texture, real fabric weave, individual hair strands, physically accurate light and shadow, true-to-life materials. Shot on a full-frame camera with a 35mm lens, natural color, no CGI or video game look.'],
     cinematic: ['Cinematic', 'Turn this 3D video game screenshot into a still from a live-action film. ' + SKIN + ' ' + KEEP + ' ' + CLEAN + ' Real people, real skin texture and real materials, shot on an anamorphic cinema camera, motivated film lighting, shallow depth of field, subtle film grain, professional color grade, no CGI or video game look.'],
@@ -278,7 +278,7 @@
     { label: 'Cinematic', style: 'cinematic' },
     { label: 'Portrait', style: 'portrait' },
     { label: 'Candid', style: 'candid' },
-    { label: 'Remove game UI', text: 'Remove every piece of the video game interface: chat windows and their text, menus, panels, buttons, icons, pop-up boxes, name tags and usernames over people, and any on-screen text. Paint the scene back in naturally where they were. Do not change the people at all: same faces, skin tone, bodies and clothes' },
+    { label: 'Remove game UI', text: "Remove any on-screen game overlays (text, windows, panels, buttons, icons or labels) and paint the scene back in where they were. If there are none, leave the picture exactly as it is. Add nothing. Do not change the people at all: same faces, skin tone, bodies and clothes" },
     { label: 'Change color…', fill: 'Change the color to ' },
     { label: 'Golden hour', text: 'Relight the scene with warm golden hour sunlight' },
     { label: 'Clean background', text: 'Tidy the background: remove clutter and distractions' },
