@@ -332,10 +332,10 @@
     const v = S.versions[vi];
     const b = say('bot', note || 'Here you go.');
     const img = document.createElement('img'); img.className = 'thumb'; img.src = v.thumb; img.alt = v.label;
-    img.onclick = () => setCurrent(vi);
+    img.onclick = () => pick(vi);
     b.appendChild(img);
     const acts = document.createElement('div'); acts.className = 'acts';
-    const back = document.createElement('button'); back.type = 'button'; back.textContent = 'Use this version'; back.onclick = () => setCurrent(vi);
+    const back = document.createElement('button'); back.type = 'button'; back.textContent = 'Edit from this one'; back.onclick = () => pick(vi);
     const dl = document.createElement('button'); dl.type = 'button'; dl.textContent = 'Download'; dl.onclick = () => download(vi);
     acts.append(back, dl); b.appendChild(acts);
     scrollDown();
@@ -352,7 +352,7 @@
   }
   function greet() {
     thread.innerHTML = '';
-    say('bot', 'Hi! Drop in a 3DXChat screenshot to start.\n\nThen tell me what to change, like "make my dress emerald green", or tap "Make it real". To change just one thing, paint over it with the brush first. Zoom in with the mouse wheel or a pinch for fine detail, and hold Space to move around. The selection can be rough: I only change what you ask for, and nothing outside the selection changes at all.');
+    say('bot', 'Hi! Drop in a 3DXChat screenshot to start.\n\nThen tell me what to change, like "make my dress emerald green", or tap "Make it real". To change just one thing, paint over it with the brush first. Zoom in with the mouse wheel or a pinch for fine detail, and hold Space to move around. The selection can be rough: I only change what you ask for, and nothing outside the selection changes at all.\n\nEach edit builds on the picture showing, which is normally your latest version. To go back, tap an older version in the strip under the picture; the line above this box always says what your next edit starts from.');
   }
 
   // ---------------------------------------------------------------- chips + composer
@@ -378,6 +378,10 @@
     if (send({ text })) { $('input').value = ''; autosize(); refresh(); }
   });
 
+  function versionName(i) {
+    if (i <= 0) return 'the original';
+    return i === S.versions.length - 1 ? 'the latest version (#' + i + ')' : 'version #' + i;
+  }
   function viaServer() { return S.mode === 'server' || S.mode === 'public'; }
   function refresh() {
     $('sendBtn').disabled = S.busy || S.cur < 0 || !$('input').value.trim();
@@ -391,12 +395,16 @@
     const scope = $('scope');
     scope.classList.toggle('sel', S.count > 0);
     const st = $('scopeText'); st.innerHTML = '';
+    const bold = t => Object.assign(document.createElement('b'), { textContent: t });
+    if (has) st.append('Next edit starts from ', bold(versionName(S.cur)), ' · ');
     if (S.count > 0) {
-      st.append('Edits apply to the ', Object.assign(document.createElement('b'), { textContent: 'selected area' }), ' only · ');
+      st.append(bold('selected area'), ' only · ');
       const c = document.createElement('button'); c.type = 'button'; c.textContent = 'clear'; c.onclick = () => { pushUndo(); clearMask(); };
       st.appendChild(c);
+    } else if (has) {
+      st.append(bold('whole picture'), '. Paint over something to change just that.');
     } else {
-      st.append('Edits apply to the ', Object.assign(document.createElement('b'), { textContent: 'whole picture' }), '. Select something to change just that.');
+      st.append('Drop in a screenshot to start.');
     }
     const left = $('left');
     if (S.mode === 'server' && S.status && S.status.signed_in) left.textContent = S.status.owner ? 'No daily limit' : (typeof S.status.left === 'number' ? S.status.left + ' edits left today' : '');
@@ -572,6 +580,13 @@
     $('drop').hidden = true; $('wrap').hidden = false;
     renderVersions(); drawOverlay(); refresh();
   }
+  function pick(i) {                 // a version the member chose (not the one an edit just made)
+    if (i === S.cur || !S.versions[i]) { setCurrent(i); return; }
+    setCurrent(i);
+    say('bot', i === S.versions.length - 1
+      ? 'Back on the latest version (#' + i + '). Your next edit builds on it.'
+      : 'Next edits start from ' + versionName(i) + '. Nothing later is lost: every version stays in the strip under the picture.');
+  }
   function renderVersions() {
     const box = $('versions'); box.innerHTML = '';
     S.versions.forEach((v, i) => {
@@ -579,7 +594,7 @@
       b.setAttribute('aria-current', i === S.cur ? 'true' : 'false');
       const img = document.createElement('img'); img.src = v.thumb; img.alt = v.label;
       const s = document.createElement('span'); s.textContent = i === 0 ? 'Original' : '#' + i;
-      b.append(img, s); b.onclick = () => setCurrent(i); box.appendChild(b);
+      b.append(img, s); b.onclick = () => pick(i); box.appendChild(b);
     });
     const cur = box.children[S.cur]; if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
