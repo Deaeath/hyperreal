@@ -888,6 +888,7 @@
       return k;
     }).map((j, k, a) => a[j]);
     const distinct = twin.filter((j, k) => j === k).length;
+    const offer = stash();
     greet();
     S.frame = null;
     S.versions = [{ canvas: canvases[0], thumb: thumbOf(canvases[0]), label: 'Original', from: -1, gif: { frames: canvases, delays, W: g.W, H: g.H, twin } }];
@@ -897,6 +898,7 @@
       (distinct < canvases.length ? ', ' + distinct + ' of them different' : '') +
       '. Tell me what to change, like "make her hair platinum blonde". Each change is ' + distinct + ' Venice edits, one a frame. ' +
       "The first frame goes alone, so if Venice says no it costs one. If one fails, send it again: frames already done aren't paid for twice.");
+    offer();
   }
   // the GIF on screen plays on its own
   let anim = 0;
@@ -954,6 +956,29 @@
     return new Blob([gifBytes(W, H, out, false)], { type: 'image/gif' });
   }
 
+  // Edited work that something would replace (a new picture, a paste, New) is kept, and the chat offers it back:
+  // a Ctrl+V once threw away an edited GIF that had cost real Venice edits (11-18). Call before replacing; the
+  // returned function posts the button (after greet(), which clears the chat).
+  function stash() {
+    if (S.versions.length < 2) return () => {};
+    const kept = { versions: S.versions, cur: S.cur, frame: S.frame };
+    return () => {
+      const b = say('bot', 'Your previous ' + (kept.versions[0].gif ? 'GIF' : 'picture') + ' and its ' + (kept.versions.length - 1) +
+        (kept.versions.length === 2 ? ' edit are' : ' edits are') + ' kept here in case you want them back.');
+      const acts = document.createElement('div'); acts.className = 'acts';
+      const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = 'Bring it back';
+      btn.onclick = () => {
+        if (S.busy) return;
+        const offer = stash();
+        S.versions = kept.versions; S.frame = kept.frame; S.mask = null;
+        setCurrent(Math.min(kept.cur, kept.versions.length - 1));
+        acts.remove();
+        say('bot', "It's back, with every version in the strip under the picture.");
+        offer();
+      };
+      acts.appendChild(btn); b.appendChild(acts); scrollDown();
+    };
+  }
   async function take(file) {
     if (!file || S.busy) return;
     if (file.type === 'image/gif') { takeGif(file); return; }
@@ -962,12 +987,14 @@
     try { img = await loadImage(file); } catch (e) { say('bot', "That picture couldn't be opened.", { err: true }); return; }
     if (img.naturalWidth * img.naturalHeight < 65536) { say('bot', 'That picture is too small. It needs to be at least 256 by 256.', { err: true }); return; }
     const c = fit(img, MAX_SIDE);
+    const offer = stash();
     greet();
     S.frame = null;
     S.versions = [{ canvas: c, thumb: thumbOf(c), label: 'Original', from: -1 }];
     S.undo = [];
     setCurrent(0);
     say('bot', 'Got it. Tap "Make it real" for the full photo treatment, or select something and tell me what to change.');
+    offer();
   }
   $('file').addEventListener('change', e => { take(e.target.files[0]); e.target.value = ''; });
   const stage = $('stage');
@@ -975,13 +1002,21 @@
   stage.addEventListener('dragleave', () => stage.classList.remove('over'));
   stage.addEventListener('drop', e => { e.preventDefault(); stage.classList.remove('over'); take(e.dataTransfer.files[0]); });
   document.addEventListener('paste', e => {
-    const item = [...(e.clipboardData ? e.clipboardData.items : [])].find(i => i.kind === 'file' && i.type.startsWith('image/'));
+    const items = [...(e.clipboardData ? e.clipboardData.items : [])];
+    const item = items.find(i => i.kind === 'file' && i.type.startsWith('image/'));
     if (!item) return;
+    // pasting into the chat box with any text on the clipboard is pasting text, never a new picture (copying from a
+    // web page or Discord puts a picture on the clipboard as well, and that once replaced an edited GIF)
+    const t = e.target, typing = t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && t.type !== 'file'));
+    if (typing && items.some(i => i.kind === 'string' && i.type === 'text/plain')) return;
+    if (S.busy) return;
     e.preventDefault(); take(item.getAsFile());
   });
   $('newBtn').onclick = () => {
-    S.versions = []; S.cur = -1; S.mask = null; S.count = 0; S.undo = []; S.frame = null; renderFrames(null);
-    $('wrap').hidden = true; $('drop').hidden = false; $('versions').innerHTML = ''; greet(); refresh();
+    if (S.busy) return;
+    const offer = stash();
+    S.versions = []; S.cur = -1; S.mask = null; S.count = 0; S.undo = []; S.frame = null; renderFrames(null); animate(null);
+    $('wrap').hidden = true; $('drop').hidden = false; $('versions').innerHTML = ''; greet(); refresh(); offer();
   };
 
   // ---------------------------------------------------------------- versions
