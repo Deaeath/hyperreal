@@ -74,6 +74,13 @@
   .stagebusy { position: absolute; inset: 0; background: rgba(0,0,0,0.25); pointer-events: none; }
   .hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: rgba(0,0,0,0.72); color: #fff; font-size: 12px; padding: 5px 10px; border-radius: 999px; white-space: nowrap; pointer-events: none; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; }
 
+  .frames { display: flex; gap: 6px; padding: 6px 12px; overflow-x: auto; background: var(--panel2); border-top: 1px solid var(--line); align-items: center; }
+  .frames .fr { position: relative; flex: none; padding: 0; border: 2px solid transparent; border-radius: 6px; background: none; cursor: pointer; line-height: 0; }
+  .frames .fr img { height: 38px; border-radius: 4px; display: block; }
+  .frames .fr[aria-pressed="true"] { border-color: var(--pink); }
+  .frames .fr span { position: absolute; left: 2px; bottom: 2px; font-size: 9px; line-height: 1; padding: 1px 3px; border-radius: 3px; background: rgba(0,0,0,0.7); color: #fff; }
+  .frames .all { flex: none; height: 42px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 0 10px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+  .frames .all[aria-pressed="true"] { background: var(--pink); color: var(--pink-ink); border-color: var(--pink); }
   .versions { display: flex; gap: 8px; padding: 8px 12px; overflow-x: auto; background: var(--panel2); border-top: 1px solid var(--line); min-height: 64px; align-items: center; }
   .versions:empty::before { content: "Versions show up here."; color: var(--muted); font-size: 12px; }
   .ver { position: relative; flex: none; padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; line-height: 0; }
@@ -196,6 +203,7 @@
       <div class="stagebusy" id="stageBusy" hidden></div>
       <div class="hint" id="hint" hidden></div>
     </div>
+    <div class="frames" id="frames" aria-label="GIF frames" hidden></div>
     <div class="versions" id="versions" aria-label="Versions"></div>
   </section>
 
@@ -402,12 +410,13 @@
     const st = $('scopeText'); st.innerHTML = '';
     const bold = t => Object.assign(document.createElement('b'), { textContent: t });
     if (has) st.append('Next edit starts from ', bold(versionName(S.cur)), ' · ');
+    const v0 = S.versions[S.cur], fr = v0 && v0.gif ? (S.frame == null ? ' on every frame' : ' on frame ' + (S.frame + 1) + ' only') : '';
     if (S.count > 0) {
-      st.append(bold('selected area'), ' only · ');
+      st.append(bold('selected area'), ' only' + fr + ' · ');
       const c = document.createElement('button'); c.type = 'button'; c.textContent = 'clear'; c.onclick = () => { pushUndo(); clearMask(); };
       st.appendChild(c);
     } else if (has) {
-      st.append(bold('whole picture'), '. Paint over something to change just that.');
+      st.append(bold('whole picture'), fr + '. Paint over something to change just that.');
     } else {
       st.append('Drop in a screenshot to start.');
     }
@@ -490,6 +499,7 @@
       if (o.text) fd.append(o.style ? 'extra' : 'prompt', o.text);
       fd.append('scope', o.scope);
       if (o.fresh) fd.append('fresh', '1');   // the original screenshot: clean the game UI out first
+      if (o.model === 'fallback') fd.append('model', 'fallback');   // straight to the model that takes adult scenes
       let r;
       try {
         r = S.mode === 'public'
@@ -505,7 +515,7 @@
       }
       const left = r.headers.get('X-Enhance-Left');
       if (S.status && left && left !== 'unlimited') S.status.left = parseInt(left, 10);
-      return { blob: await r.blob(), blurred: r.headers.get('X-Enhance-Blurred') === 'true' };
+      return { blob: await r.blob(), blurred: r.headers.get('X-Enhance-Blurred') === 'true', fallback: r.headers.get('X-Enhance-Fallback') === 'true' };
     }
     const b64 = await new Promise((ok, fail) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.onerror = fail; fr.readAsDataURL(blob); });
     const call = async model => {
@@ -518,12 +528,13 @@
       } catch (e) { throw new Error("Couldn't reach Venice. Check your connection and try again."); }
     };
     const refused = r => r.status === 422 || (r.headers.get('x-venice-is-content-violation') || '').toLowerCase() === 'true';
-    let r = await call($('model').value);
-    if (refused(r) && $('model').value !== FALLBACK_MODEL) r = await call(FALLBACK_MODEL);   // adult scenes
+    let used = o.model === 'fallback' ? FALLBACK_MODEL : $('model').value;
+    let r = await call(used);
+    if (refused(r) && used !== FALLBACK_MODEL) r = await call(used = FALLBACK_MODEL);   // adult scenes
     const type = (r.headers.get('Content-Type') || '').split(';')[0];
     if (refused(r)) throw new Error(VENICE_FAIL[422]);
     if (!r.ok || !type.startsWith('image/')) throw new Error(VENICE_FAIL[r.status] || ('Venice had a problem with that one (' + r.status + '). Try again.'));
-    return { blob: await r.blob(), blurred: (r.headers.get('x-venice-is-blurred') || '').toLowerCase() === 'true' };
+    return { blob: await r.blob(), blurred: (r.headers.get('x-venice-is-blurred') || '').toLowerCase() === 'true', fallback: used === FALLBACK_MODEL };
   }
 
   // ==== codec start (the same as in gif.html: GIFs in, GIFs out; tests/test_gif_studio.py checks the two match)
@@ -865,25 +876,68 @@
       cg.fillStyle = '#ffffff'; cg.fillRect(0, 0, W, H); cg.drawImage(src, 0, 0, W, H);
       return c;
     });
+    // repeats: a frame the same as an earlier one (at most 0.02% of its pixels off by more than a shade) takes that
+    // one's edit instead of paying for its own
+    const twin = frames.map((f, k) => {
+      const most = Math.max(2, Math.floor(f.length / 4 * 0.0002));
+      for (let j = 0; j < k; j++) {
+        const h = frames[j]; let off = 0;
+        for (let i = 0; i < f.length && off <= most; i += 4) if (Math.abs(f[i] - h[i]) > 24 || Math.abs(f[i + 1] - h[i + 1]) > 24 || Math.abs(f[i + 2] - h[i + 2]) > 24 || Math.abs(f[i + 3] - h[i + 3]) > 24) off++;
+        if (off <= most) return j;
+      }
+      return k;
+    }).map((j, k, a) => a[j]);
+    const distinct = twin.filter((j, k) => j === k).length;
     greet();
-    S.versions = [{ canvas: canvases[0], thumb: thumbOf(canvases[0]), label: 'Original', from: -1, gif: { frames: canvases, delays, W: g.W, H: g.H } }];
+    S.frame = null;
+    S.versions = [{ canvas: canvases[0], thumb: thumbOf(canvases[0]), label: 'Original', from: -1, gif: { frames: canvases, delays, W: g.W, H: g.H, twin } }];
     S.undo = [];
     setCurrent(0);
     say('bot', 'A GIF with ' + canvases.length + ' frames' + (g.frames.length > GIF_MAX ? ' (thinned from ' + g.frames.length + ')' : '') +
-      '. Tell me what to change, like "make her hair platinum blonde". Each change runs on every frame: ' + canvases.length + ' Venice edits.');
+      (distinct < canvases.length ? ', ' + distinct + ' of them different' : '') +
+      '. Tell me what to change, like "make her hair platinum blonde". Each change is ' + distinct + ' Venice edits, one a frame. ' +
+      "The first frame goes alone, so if Venice says no it costs one. If one fails, send it again: frames already done aren't paid for twice.");
   }
   // the GIF on screen plays on its own
   let anim = 0;
   function animate(v) {
     clearTimeout(anim);
-    if (!v || !v.gif) return;
+    if (!v || !v.gif) { renderFrames(null); return; }
+    renderFrames(v);
+    if (S.frame != null) { $('view').getContext('2d').drawImage(v.gif.frames[S.frame], 0, 0, S.W, S.H); return; }
     let i = 0;
     const step = () => {
-      if (S.versions[S.cur] !== v) return;
+      if (S.versions[S.cur] !== v || S.frame != null) return;
       if (!S.peek) $('view').getContext('2d').drawImage(v.gif.frames[i], 0, 0, S.W, S.H);
       anim = setTimeout(() => { i = (i + 1) % v.gif.frames.length; step(); }, v.gif.delays[i]);
     };
     step();
+  }
+  // the frames of a GIF version: tap one to stop on it (edits then change that frame only), or All frames
+  function renderFrames(v) {
+    const box = $('frames');
+    if (!v || !v.gif) { box.hidden = true; box.innerHTML = ''; box._v = null; return; }
+    box.hidden = false;
+    if (box._v !== v) {
+      box._v = v; box.innerHTML = '';
+      const all = document.createElement('button'); all.type = 'button'; all.className = 'all'; all.textContent = '\u25b6 All frames';
+      all.title = 'Play, and edit every frame'; all.onclick = () => pickFrame(null);
+      box.appendChild(all);
+      v.gif.thumbs = v.gif.thumbs || v.gif.frames.map(c => fit(c, 76).toDataURL('image/jpeg', 0.7));
+      v.gif.thumbs.forEach((t, k) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'fr'; b.title = 'Frame ' + (k + 1) + ': show it, and edit this one only';
+        const im = document.createElement('img'); im.src = t; im.alt = 'Frame ' + (k + 1);
+        const n = document.createElement('span'); n.textContent = String(k + 1);
+        b.append(im, n); b.onclick = () => pickFrame(k); box.appendChild(b);
+      });
+    }
+    [].forEach.call(box.children, (b, i) => b.setAttribute('aria-pressed', (i === 0 ? S.frame == null : S.frame === i - 1) ? 'true' : 'false'));
+  }
+  function pickFrame(k) {
+    const v = S.versions[S.cur]; if (!v || !v.gif || S.busy) return;
+    S.frame = k == null ? null : Math.max(0, Math.min(v.gif.frames.length - 1, k));
+    animate(v); refresh();
+    if (S.frame != null) { const b = $('frames').children[S.frame + 1]; if (b) b.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
   }
   function gifBlob(v) {
     const W = v.gif.W, H = v.gif.H, c = canvasOf(W, H), g = c.getContext('2d', { willReadFrequently: true }), out = [];
@@ -909,6 +963,7 @@
     if (img.naturalWidth * img.naturalHeight < 65536) { say('bot', 'That picture is too small. It needs to be at least 256 by 256.', { err: true }); return; }
     const c = fit(img, MAX_SIDE);
     greet();
+    S.frame = null;
     S.versions = [{ canvas: c, thumb: thumbOf(c), label: 'Original', from: -1 }];
     S.undo = [];
     setCurrent(0);
@@ -925,7 +980,7 @@
     e.preventDefault(); take(item.getAsFile());
   });
   $('newBtn').onclick = () => {
-    S.versions = []; S.cur = -1; S.mask = null; S.count = 0; S.undo = [];
+    S.versions = []; S.cur = -1; S.mask = null; S.count = 0; S.undo = []; S.frame = null; renderFrames(null);
     $('wrap').hidden = true; $('drop').hidden = false; $('versions').innerHTML = ''; greet(); refresh();
   };
 
@@ -939,6 +994,7 @@
     view.width = ov.width = S.W; view.height = ov.height = S.H;
     view.getContext('2d').drawImage(v.canvas, 0, 0);
     $('drop').hidden = true; $('wrap').hidden = false;
+    if (!v.gif || (S.frame != null && S.frame >= v.gif.frames.length)) S.frame = null;
     renderVersions(); drawOverlay(); refresh(); animate(v);
   }
   function pick(i) {                 // a version the member chose (not the one an edit just made)
@@ -971,7 +1027,8 @@
   function peek(on) {
     const v = S.versions[S.cur]; if (!v || v.from < 0) return;
     S.peek = on;
-    const src = on ? S.versions[v.from].canvas : v.canvas;
+    const at = (x) => x.gif && S.frame != null ? x.gif.frames[S.frame] : x.canvas;
+    const src = on ? at(S.versions[v.from]) : at(v);
     $('view').getContext('2d').drawImage(src, 0, 0, S.W, S.H);
     showHint(on ? 'Before' : '');
     drawOverlay();
@@ -1218,6 +1275,11 @@
   });
 
   // ---------------------------------------------------------------- sending an edit
+  function maskKey() {                // which pixels are selected, as a short fingerprint (FNV-1a)
+    let h = 2166136261;
+    for (let i = 0; i < S.mask.length; i++) if (S.mask[i]) h = Math.imul(h ^ i, 16777619) >>> 0;
+    return S.count + ':' + h.toString(36);
+  }
   function regionOfMask() {
     const W = S.W, H = S.H, m = S.mask;
     let x0 = W, y0 = H, x1 = -1, y1 = -1;
@@ -1272,20 +1334,20 @@
     try {
       const reg = area ? regionOfMask() : { x: 0, y: 0, w: S.W, h: S.H };
       // one picture, or every frame of a GIF (four at a time); a GIF's frames all keep its size
-      const editOne = async (canvas, forceSize) => {
+      const editOne = async (canvas, forceSize, model) => {
         let crop = canvasOf(reg.w, reg.h);
         crop.getContext('2d').drawImage(canvas, reg.x, reg.y, reg.w, reg.h, 0, 0, reg.w, reg.h);
         if (Math.max(reg.w, reg.h) > MAX_SIDE) crop = fit(crop, MAX_SIDE);
-        const jpeg = await toJpeg(crop), opts = { style: o.style, text: o.text, scope: area ? 'area' : 'whole', fresh: baseIndex === 0 && !base.gif };
+        const jpeg = await toJpeg(crop), opts = { style: o.style, text: o.text, scope: area ? 'area' : 'whole', fresh: baseIndex === 0 && !base.gif, model };
         let res;
-        // a GIF frame waits its turn when the server already has this member's edits running (3 at once), and
-        // gets two more tries after any other failure, so one bad frame doesn't throw away the frames already paid for
-        for (let tries = 0, other = 0; ; tries++) {
+        // a GIF frame tries again only on answers that cost nothing: the server already running this member's
+        // edits (3 at once), Venice busy, or no connection. Anything else stops, so nothing is paid twice.
+        for (let tries = 0; ; tries++) {
           try { res = await runEdit(jpeg, opts); break; }
           catch (e) {
-            const busy = /edits working/.test((e && e.message) || '');
-            if (!forceSize || tries > 60 || (!busy && ++other > 2)) throw e;
-            await new Promise(ok => setTimeout(ok, busy ? 1500 : 2500));
+            const m = (e && e.message) || '';
+            if (!forceSize || tries > 60 || !/edits working|Venice is busy|Couldn't reach/.test(m)) throw e;
+            await new Promise(ok => setTimeout(ok, /edits working/.test(m) ? 1500 : 4000));
           }
         }
         const img = await loadImage(res.blob);
@@ -1296,24 +1358,43 @@
           out = sameShape ? canvasOf(S.W, S.H) : fit(img, MAX_SIDE);
           if (sameShape) { const g = out.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, S.W, S.H); }
         }
-        return { out, blurred: res.blurred };
+        return { out, blurred: res.blurred, fallback: res.fallback };
       };
       let out, res, gif = null;
-      if (base.gif) {
-        const n = base.gif.frames.length, outs = new Array(n);
-        let next = 0, done = 0, blurred = false;
-        const worker = async () => {
-          while (next < n) {
-            const k = next++;
-            const r = await editOne(base.gif.frames[k], true);
-            outs[k] = r.out; blurred = blurred || r.blurred; done++;
-            showHint('Editing the GIF: ' + done + ' of ' + n + ' frames');
-          }
+      if (base.gif && S.frame != null) {
+        // one frame: one edit. Frames that were repeats of it keep the old picture (the first of them leads them now).
+        const k = S.frame, old = base.gif.twin, root = old[k];
+        const r = await editOne(base.gif.frames[k], true, base.gif.fallback ? 'fallback' : undefined);
+        const frames = base.gif.frames.slice(), twin = old.slice();
+        frames[k] = r.out; twin[k] = k;
+        if (root === k) { let lead = -1; for (let j = 0; j < twin.length; j++) if (j !== k && old[j] === k) { if (lead < 0) lead = j; twin[j] = lead; } }
+        out = frames[0]; res = r;
+        gif = { frames, delays: base.gif.delays, W: base.gif.W, H: base.gif.H, twin, fallback: base.gif.fallback || r.fallback, one: k };
+      } else if (base.gif) {
+        // Credits: only distinct frames are edited (a repeat takes its twin's result); the first one goes alone, so
+        // a refusal or a bad prompt costs one edit, not thirty, and when it needed the adult-scene model the rest go
+        // straight there instead of paying for a refusal each. Finished frames are kept under the request, so
+        // sending the same thing again after a failure only edits what's missing.
+        const n = base.gif.frames.length, twin = base.gif.twin, outs = new Array(n);
+        const key = (o.style || '') + '|' + (o.text || '') + '|' + (area ? maskKey() : '');
+        const kept = (base.gifDone = base.gifDone || {})[key] = base.gifDone[key] || { outs: [], fallback: !!base.gif.fallback, blurred: false };
+        const todo = [];
+        for (let k = 0; k < n; k++) if (twin[k] === k && !kept.outs[k]) todo.push(k);
+        const total = todo.length;
+        let done = 0;
+        const edit = async k => {
+          const r = await editOne(base.gif.frames[k], true, kept.fallback ? 'fallback' : undefined);
+          kept.outs[k] = r.out; kept.blurred = kept.blurred || r.blurred; if (r.fallback) kept.fallback = true;
+          showHint('Editing the GIF: ' + (++done) + ' of ' + total + ' frames');
         };
-        showHint('Editing the GIF: 0 of ' + n + ' frames');
-        await Promise.all([0, 1, 2].map(worker));                      // the server runs 3 edits at once per member
+        showHint(total ? 'Editing the GIF: 0 of ' + total + ' frames' : '');
+        if (todo.length && !kept.outs.some(Boolean)) await edit(todo.shift());       // the first one alone
+        await Promise.all([0, 1, 2].map(async () => {                    // the server runs 3 edits at once per member
+          while (todo.length) await edit(todo.shift());
+        }));
         showHint('');
-        out = outs[0]; res = { blurred }; gif = { frames: outs, delays: base.gif.delays, W: base.gif.W, H: base.gif.H };
+        for (let k = 0; k < n; k++) outs[k] = kept.outs[twin[k]];
+        out = outs[0]; res = { blurred: kept.blurred }; gif = { frames: outs, delays: base.gif.delays, W: base.gif.W, H: base.gif.H, twin: base.gif.twin, fallback: kept.fallback };
       } else {
         const r = await editOne(base.canvas, false);
         out = r.out; res = r;
@@ -1323,6 +1404,7 @@
       S.dim = true;   // outline only, so the result shows; any selection change brings the tint back
       setCurrent(S.versions.length - 1);
       let note = area ? 'Done. Only the selected area changed. Hold "Before" to compare.' : 'Done. Hold "Before" to compare.';
+      if (gif && gif.one != null) note = 'Done. Only frame ' + (gif.one + 1) + (area ? "'s selected area" : '') + ' changed. Hold "Before" to compare, or tap "All frames" to watch it play.';
       if (res.blurred) note += S.mode === 'byok' ? '\n\nVenice blurred this one because it counts as adult content. Turn off safe mode under Key to get it unblurred.' : "\n\nVenice blurred this one because it counts as adult content, and the site has Venice's safe mode on.";
       sayResult(S.versions.length - 1, note);
     } catch (e) {
