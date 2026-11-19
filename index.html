@@ -1276,7 +1276,18 @@
         let crop = canvasOf(reg.w, reg.h);
         crop.getContext('2d').drawImage(canvas, reg.x, reg.y, reg.w, reg.h, 0, 0, reg.w, reg.h);
         if (Math.max(reg.w, reg.h) > MAX_SIDE) crop = fit(crop, MAX_SIDE);
-        const res = await runEdit(await toJpeg(crop), { style: o.style, text: o.text, scope: area ? 'area' : 'whole', fresh: baseIndex === 0 && !base.gif });
+        const jpeg = await toJpeg(crop), opts = { style: o.style, text: o.text, scope: area ? 'area' : 'whole', fresh: baseIndex === 0 && !base.gif };
+        let res;
+        // a GIF frame waits its turn when the server already has this member's edits running (3 at once), and
+        // gets two more tries after any other failure, so one bad frame doesn't throw away the frames already paid for
+        for (let tries = 0, other = 0; ; tries++) {
+          try { res = await runEdit(jpeg, opts); break; }
+          catch (e) {
+            const busy = /edits working/.test((e && e.message) || '');
+            if (!forceSize || tries > 60 || (!busy && ++other > 2)) throw e;
+            await new Promise(ok => setTimeout(ok, busy ? 1500 : 2500));
+          }
+        }
         const img = await loadImage(res.blob);
         let out;
         if (area) out = composite(canvas, img, reg);
@@ -1300,7 +1311,7 @@
           }
         };
         showHint('Editing the GIF: 0 of ' + n + ' frames');
-        await Promise.all([0, 1, 2, 3].map(worker));
+        await Promise.all([0, 1, 2].map(worker));                      // the server runs 3 edits at once per member
         showHint('');
         out = outs[0]; res = { blurred }; gif = { frames: outs, delays: base.gif.delays, W: base.gif.W, H: base.gif.H };
       } else {
