@@ -149,7 +149,7 @@
   <span class="left" id="left"></span>
   <a class="iconbtn" id="gifLink" href="gif.html" title="GIF Studio: change skin and hair colours in a GIF or a video, every frame at once">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z"/></svg><span>GIF Studio</span></a>
-  <a class="iconbtn" id="memberLink" href="https://sbsbot.my.pebble.host/desktop" target="_top" rel="noopener" title="SBS members use Hyperreal free on the SBS desktop, no key needed" hidden>SBS member? No key needed</a>
+  <a class="iconbtn" id="memberLink" href="https://sbsbot.my.pebble.host/desktop" target="_top" rel="noopener" title="Hyperreal is free on the SBS site: no key, no account" hidden>Free on the SBS site, no key</a>
   <button class="iconbtn" id="settingsBtn" type="button" title="Venice key and model" hidden>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg><span>Key</span>
   </button>
@@ -430,14 +430,7 @@
   // ---------------------------------------------------------------- backends
   function key() { return ($('key').value || '').trim(); }
   function ageCheck() { if ((S.mode !== 'server' || S.guest) && store.get('hr_adult') !== 'yes') $('ageGate').hidden = false; }
-  function guestMode() {
-    const m = $('memberLink');
-    m.textContent = 'SBS member? Log in';
-    m.href = '/login?return_to=/desktop';
-    m.title = 'SBS members log in with Discord for more edits a day';
-    m.hidden = false;
-    ageCheck();
-  }
+  function guestMode() { ageCheck(); }   // no account needed: guests just confirm they're 18+
   $('ageYes').onclick = () => { store.set('hr_adult', 'yes'); $('ageGate').hidden = true; };
   async function tryPublic() {
     try {
