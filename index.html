@@ -10,7 +10,8 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23be123c'/%3E%3Ccircle cx='32' cy='35' r='13' fill='none' stroke='%23fff' stroke-width='5'/%3E%3Crect x='22' y='12' width='20' height='8' rx='3' fill='%23fff'/%3E%3C/svg%3E">
 <!--
   Hyperreal Studio. One page, two homes:
-    * on the SBS site (/hyperreal) it edits through /api/sbs/enhance with the member's login and the server's key
+    * on the SBS site (/hyperreal) it edits through /api/sbs/enhance with the member's login and the server's key;
+      visitors who aren't SBS members get the public free allowance there instead of a login wall
     * on GitHub Pages it edits free through the SBS server's public route (the key never leaves the server)
     * if that can't be reached, it asks for the visitor's own Venice key and calls Venice directly
   Selections never go to Venice as a mask (its edit API has none): the area around the selection is
@@ -422,13 +423,21 @@
     }
     const left = $('left');
     if (S.mode === 'server' && S.status && S.status.signed_in) left.textContent = S.status.owner ? 'No daily limit' : (typeof S.status.left === 'number' ? S.status.left + ' edits left today' : '');
-    else if (S.mode === 'public' && S.status) left.textContent = typeof S.status.left === 'number' ? S.status.left + ' free edits left today' : 'Free';
+    else if ((S.mode === 'public' || S.guest) && S.status) left.textContent = typeof S.status.left === 'number' ? S.status.left + ' free edits left today' : 'Free';
     else left.textContent = '';
   }
 
   // ---------------------------------------------------------------- backends
   function key() { return ($('key').value || '').trim(); }
-  function ageCheck() { if (S.mode !== 'server' && store.get('hr_adult') !== 'yes') $('ageGate').hidden = false; }
+  function ageCheck() { if ((S.mode !== 'server' || S.guest) && store.get('hr_adult') !== 'yes') $('ageGate').hidden = false; }
+  function guestMode() {
+    const m = $('memberLink');
+    m.textContent = 'SBS member? Log in';
+    m.href = '/login?return_to=/desktop';
+    m.title = 'SBS members log in with Discord for more edits a day';
+    m.hidden = false;
+    ageCheck();
+  }
   $('ageYes').onclick = () => { store.set('hr_adult', 'yes'); $('ageGate').hidden = true; };
   async function tryPublic() {
     try {
@@ -451,7 +460,10 @@
       if (!r.ok) throw new Error(r.status);
       S.status = await r.json();
       S.mode = 'server';
-      if (!S.status.signed_in) $('gate').hidden = false;
+      if (!S.status.signed_in) {
+        if (S.status.guest) { S.guest = true; guestMode(); }   // not an SBS member: free edits, no login wall
+        else $('gate').hidden = false;
+      }
       else if (!S.status.configured) say('bot', "Hyperreal isn't switched on yet. Try again later.", { err: true });
     } catch (e) { return byok(); }
     refresh();
@@ -510,7 +522,7 @@
       if (!r.ok || !type.startsWith('image/')) {
         let err = 'Something went wrong. Try again.';
         try { const d = await r.json(); err = d.error || err; if (typeof d.left === 'number' && S.status) S.status.left = d.left; } catch (e) {}
-        if (r.status === 401 && S.mode === 'server') $('gate').hidden = false;
+        if (r.status === 401 && S.mode === 'server' && !S.guest) $('gate').hidden = false;
         throw new Error(err);
       }
       const left = r.headers.get('X-Enhance-Left');
@@ -1354,9 +1366,9 @@
     if (S.busy) return false;
     if (S.cur < 0) { say('bot', 'Drop in a screenshot first.', { err: true }); return false; }
     if (S.mode === 'byok' && !key()) { pendingSend = o; $('settings').hidden = false; $('key').focus(); return false; }
-    if (S.mode === 'server' && S.status && !S.status.signed_in) { $('gate').hidden = false; return false; }
+    if (S.mode === 'server' && S.status && !S.status.signed_in && !S.guest) { $('gate').hidden = false; return false; }
     if (viaServer() && S.status && S.status.left === 0) { say('bot', "That's all for today. Your edits reset at midnight UTC.", { err: true }); return false; }
-    if (S.mode !== 'server' && store.get('hr_adult') !== 'yes') { $('ageGate').hidden = false; return false; }
+    if ((S.mode !== 'server' || S.guest) && store.get('hr_adult') !== 'yes') { $('ageGate').hidden = false; return false; }
     go(o);
     return true;
   }
