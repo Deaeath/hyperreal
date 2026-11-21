@@ -264,6 +264,7 @@
 
   // ---------------------------------------------------------------- prompts (the server builds its own copy)
   const MEN = "Every man in this picture is a Black man with dark brown skin: keep him Black, with the same dark skin. Everyone else keeps their own skin tone exactly as it is. Do not add any people.";
+  const MEN_EDIT = "Make every man in this picture a Black man with dark brown skin. Everyone else keeps their own skin tone exactly as it is. Do not add any people. Change nothing else: keep the faces' shapes and features, hair, poses, bodies, clothing, camera angle, framing, lighting and background exactly the same.";
   const SKIN = "Most important rule: keep every person's skin tone, complexion, ethnicity and facial features exactly as they are in the picture. Dark-skinned and Black people must stay exactly as dark, with the same deep brown or black skin: never lighten, whiten or change anyone's skin color, and never make a Black person look white.";
   const KEEP = 'Keep exactly the same people, faces, poses, expressions, body shapes, clothing, hair styles and colors, camera angle, framing and background layout. Do not add or remove any people or real objects in the scene. ' + SKIN;
   const CLEAN = "The finished photo has no on-screen overlays of any kind: no text, windows, panels, buttons, icons or labels. If the screenshot has any, paint the scene back in where they were; if it has none, add none.";
@@ -279,9 +280,10 @@
   function clean(t, n) { return String(t || '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim().slice(0, n); }
   function buildPrompt(o) {
     let p;
+    if (!o.style && String(o.text || '').startsWith(MEN_EDIT.slice(0, 45))) return MEN_EDIT + ' ' + ADULTS;
     if (o.style && STYLES[o.style]) p = STYLES[o.style][1] + (o.text ? ' Also: ' + clean(o.text, 200) : '');
     else p = SKIN + ' ' + clean(o.text, 1000).replace(/[.!\s]+$/, '') + '. ' + (o.scope === 'area' ? KEEP_AREA : KEEP_WHOLE);
-    return MEN + ' ' + p + ' ' + ADULTS;
+    return p + ' ' + ADULTS;   // skin colour only changes with the Make men Black button
   }
 
   const QUICK = [
@@ -290,6 +292,7 @@
     { label: 'Portrait', style: 'portrait' },
     { label: 'Candid', style: 'candid' },
     { label: 'Remove game UI', text: "Remove any on-screen game overlays (text, windows, panels, buttons, icons or labels) and paint the scene back in where they were. If there are none, leave the picture exactly as it is. Add nothing. Do not change the people at all: same faces, skin tone, bodies and clothes" },
+    { label: 'Make men Black', text: MEN_EDIT },
     { label: 'Change color…', fill: 'Change the color to ' },
     { label: 'Golden hour', text: 'Relight the scene with warm golden hour sunlight' },
     { label: 'Clean background', text: 'Tidy the background: remove clutter and distractions' },
